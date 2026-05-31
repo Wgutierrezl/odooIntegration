@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { salesApi } from '../../api/sales';
 import { productsApi } from '../../api/products';
 import { contactsApi } from '../../api/contacts';
-import { ShoppingCart, Plus, X, FileText, Download, Check } from 'lucide-react';
+import { ShoppingCart, X, FileText, Download, Check } from 'lucide-react';
 
 interface CartItem {
   product_id: number;
@@ -70,35 +70,35 @@ export default function SalesPage() {
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Sales / POS</h1>
+        <h1 className="text-2xl font-bold">Ventas / POS</h1>
         <button onClick={() => setShowPOS(true)} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm">
-          <ShoppingCart size={16} /> New Sale
+          <ShoppingCart size={16} /> Nueva venta
         </button>
       </div>
 
       {showPOS && (
         <div className="bg-white rounded-xl shadow-lg border mb-6 p-4">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold">Point of Sale</h2>
+            <h2 className="text-lg font-semibold">Punto de venta</h2>
             <button onClick={() => setShowPOS(false)}><X size={20} /></button>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
               <select
                 value={selectedCustomer ?? ''}
                 onChange={(e) => setSelectedCustomer(+e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none mb-3"
               >
-                <option value="">Select customer...</option>
+                <option value="">Selecciona cliente...</option>
                 {customersData?.items?.map((c: any) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
 
               <input
-                placeholder="Search products..."
+                placeholder="Buscar productos..."
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none mb-2"
@@ -118,10 +118,10 @@ export default function SalesPage() {
             </div>
 
             <div>
-              <h3 className="text-sm font-medium text-gray-700 mb-2">Cart</h3>
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Carrito</h3>
               <div className="border rounded-lg min-h-[200px] p-2">
                 {cart.length === 0 ? (
-                  <p className="text-gray-400 text-sm text-center mt-8">Add products to cart</p>
+                  <p className="text-gray-400 text-sm text-center mt-8">Agrega productos al carrito</p>
                 ) : (
                   <>
                     {cart.map((item) => (
@@ -158,24 +158,26 @@ export default function SalesPage() {
                 disabled={!selectedCustomer || cart.length === 0 || createSale.isPending}
                 className="w-full mt-3 bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
               >
-                {createSale.isPending ? 'Creating...' : 'Create Sale Order'}
+                {createSale.isPending ? 'Creando...' : 'Crear orden de venta'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {isLoading ? <p className="text-gray-500">Loading...</p> : (
+      {isLoading ? <p className="text-gray-500">Cargando...</p> : (
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
               <tr className="text-left text-gray-500">
-                <th className="px-4 py-3">Order</th>
-                <th className="px-4 py-3">Customer</th>
-                <th className="px-4 py-3">Date</th>
-                <th className="px-4 py-3">State</th>
+                <th className="px-4 py-3">Orden</th>
+                <th className="px-4 py-3">Cliente</th>
+                <th className="px-4 py-3">Vendedor</th>
+                <th className="px-4 py-3">Estado</th>
+                <th className="px-4 py-3">Estado factura</th>
+                <th className="px-4 py-3 text-right">Subtotal</th>
                 <th className="px-4 py-3 text-right">Total</th>
-                <th className="px-4 py-3">Actions</th>
+                <th className="px-4 py-3">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -183,7 +185,7 @@ export default function SalesPage() {
                 <tr key={s.id} className="border-t hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium">{s.name}</td>
                   <td className="px-4 py-3">{s.partner_id?.[1] ?? '—'}</td>
-                  <td className="px-4 py-3 text-gray-500">{s.date_order?.split(' ')[0]}</td>
+                  <td className="px-4 py-3">{s.user_id?.[1] ?? '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-1 rounded text-xs ${
                       s.state === 'sale' ? 'bg-green-100 text-green-700' :
@@ -191,20 +193,22 @@ export default function SalesPage() {
                       'bg-gray-100 text-gray-600'
                     }`}>{s.state}</span>
                   </td>
+                  <td className="px-4 py-3">{s.invoice_status ?? '—'}</td>
+                  <td className="px-4 py-3 text-right">${(s.amount_untaxed ?? 0).toFixed(2)}</td>
                   <td className="px-4 py-3 text-right">${s.amount_total?.toFixed(2)}</td>
                   <td className="px-4 py-3 flex gap-1">
                     {s.state === 'draft' && (
-                      <button onClick={() => confirmSale.mutate(s.id)} className="p-1 hover:bg-green-50 rounded" title="Confirm">
+                      <button onClick={() => confirmSale.mutate(s.id)} className="p-1 hover:bg-green-50 rounded" title="Confirmar">
                         <Check size={16} className="text-green-600" />
                       </button>
                     )}
-                    {s.state === 'sale' && (
-                      <button onClick={() => createInvoice.mutate(s.id)} className="p-1 hover:bg-blue-50 rounded" title="Create Invoice">
+                    {(s.state === 'sale' || s.state === 'done') && (
+                      <button onClick={() => createInvoice.mutate(s.id)} className="p-1 hover:bg-blue-50 rounded" title="Crear factura">
                         <FileText size={16} className="text-blue-600" />
                       </button>
                     )}
                     {s.invoice_ids?.length > 0 && (
-                      <button onClick={() => salesApi.downloadInvoicePdf(s.id)} className="p-1 hover:bg-purple-50 rounded" title="Download PDF">
+                      <button onClick={() => salesApi.downloadInvoicePdf(s.id)} className="p-1 hover:bg-purple-50 rounded" title="Descargar PDF">
                         <Download size={16} className="text-purple-600" />
                       </button>
                     )}
@@ -212,7 +216,7 @@ export default function SalesPage() {
                 </tr>
               ))}
               {!salesData?.items?.length && (
-                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No sales found</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">No se encontraron ventas</td></tr>
               )}
             </tbody>
           </table>

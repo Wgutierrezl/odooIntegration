@@ -11,11 +11,18 @@ export class DashboardService {
       totalCustomers,
       totalQuotations,
       totalOpportunities,
+      totalInvoices,
+      unpaidInvoices,
     ] = await Promise.all([
       this.odoo.searchCount('sale.order', [['state', '=', 'sale']]),
       this.odoo.searchCount('res.partner', [['customer_rank', '>', 0]]),
       this.odoo.searchCount('sale.order', [['state', '=', 'draft']]),
       this.odoo.searchCount('crm.lead', []),
+      this.odoo.searchCount('account.move', [['move_type', '=', 'out_invoice']]),
+      this.odoo.searchCount('account.move', [
+        ['move_type', '=', 'out_invoice'],
+        ['payment_state', 'in', ['not_paid', 'partial']],
+      ]),
     ]);
 
     return {
@@ -23,6 +30,8 @@ export class DashboardService {
       total_customers: totalCustomers,
       total_quotations: totalQuotations,
       total_opportunities: totalOpportunities,
+      total_invoices: totalInvoices,
+      unpaid_invoices: unpaidInvoices,
     };
   }
 

@@ -13,7 +13,11 @@ const CONTACT_FIELDS = [
   'customer_rank',
   'supplier_rank',
   'city',
+  'street',
+  'zip',
   'country_id',
+  'lang',
+  'company_type',
 ];
 
 @Injectable()

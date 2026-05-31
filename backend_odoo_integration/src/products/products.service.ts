@@ -7,10 +7,14 @@ const PRODUCT_FIELDS = [
   'id',
   'name',
   'list_price',
+  'standard_price',
   'default_code',
   'categ_id',
   'type',
   'qty_available',
+  'virtual_available',
+  'uom_id',
+  'currency_id',
   'image_128',
 ];
 

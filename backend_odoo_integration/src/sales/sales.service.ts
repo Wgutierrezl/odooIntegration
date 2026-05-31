@@ -8,7 +8,12 @@ const ORDER_FIELDS = [
   'partner_id',
   'state',
   'amount_total',
+  'amount_untaxed',
+  'currency_id',
+  'invoice_status',
   'date_order',
+  'user_id',
+  'payment_term_id',
   'invoice_ids',
 ];
 
@@ -28,9 +33,10 @@ export class SalesService {
     const orders = await this.odoo.read('sale.order', [id], [
       ...ORDER_FIELDS,
       'order_line',
+      'client_order_ref',
     ]);
     const order = orders[0];
-    if (!order) throw new NotFoundException('Sale order not found');
+    if (!order) throw new NotFoundException('Orden de venta no encontrada');
 
     if (order.order_line?.length) {
       order.lines = await this.odoo.read('sale.order.line', order.order_line, [
@@ -40,6 +46,20 @@ export class SalesService {
         'price_unit',
         'price_subtotal',
       ]);
+    }
+
+    if (order.invoice_ids?.length) {
+      const invoices = await this.odoo.read('account.move', order.invoice_ids, [
+        'id',
+        'name',
+        'state',
+        'payment_state',
+        'invoice_date',
+        'invoice_date_due',
+        'amount_total',
+        'currency_id',
+      ]);
+      order.invoices = invoices;
     }
 
     return order;
@@ -64,13 +84,30 @@ export class SalesService {
     return this.findOne(orderId);
   }
 
+  private async ensureConfirmed(orderId: number) {
+    const order = await this.findOne(orderId);
+
+    if (order.state === 'sale' || order.state === 'done') {
+      return order;
+    }
+
+    if (!['draft', 'sent'].includes(order.state)) {
+      throw new Error(
+        `La orden ${order.name} está en estado '${order.state}' y no puede confirmarse automáticamente`,
+      );
+    }
+
+    await this.odoo.executeKw('sale.order', 'action_confirm', [[orderId]]);
+    return this.findOne(orderId);
+  }
+
   async confirm(id: number) {
-    await this.odoo.executeKw('sale.order', 'action_confirm', [[id]]);
+    await this.ensureConfirmed(id);
     return this.findOne(id);
   }
 
   async createInvoice(id: number) {
-    await this.odoo.executeKw('sale.order', 'action_confirm', [[id]]);
+    await this.ensureConfirmed(id);
 
     const wizardId = await this.odoo.create('sale.advance.payment.inv', {
       advance_payment_method: 'delivered',
@@ -92,15 +129,10 @@ export class SalesService {
     const invoiceIds = order.invoice_ids;
 
     if (!invoiceIds?.length) {
-      throw new NotFoundException('No invoice found for this order');
+      throw new NotFoundException('No se encontró factura para esta orden');
     }
 
     const invoiceId = invoiceIds[0];
-    const report = await this.odoo.renderReport(
-      'account.report_invoice',
-      [invoiceId],
-    );
-
-    return Buffer.from(report.base64, 'base64');
+    return this.odoo.renderInvoicePdf(invoiceId);
   }
 }

@@ -34,9 +34,7 @@ export class OdooClient implements OnModuleInit {
 
     const parsedUrl = new URL(this.url);
     const isSecure = parsedUrl.protocol === 'https:';
-    const createClient = isSecure
-      ? xmlrpc.createSecureClient
-      : xmlrpc.createClient;
+    const createClient = isSecure ? xmlrpc.createSecureClient : xmlrpc.createClient;
 
     this.commonClient = createClient({
       host: parsedUrl.hostname,
@@ -64,11 +62,7 @@ export class OdooClient implements OnModuleInit {
     }
   }
 
-  private callXmlRpc(
-    client: xmlrpc.Client,
-    method: string,
-    params: any[],
-  ): Promise<any> {
+  private callXmlRpc(client: xmlrpc.Client, method: string, params: any[]): Promise<any> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(
         () => reject(new Error(`XML-RPC timeout after ${this.timeoutMs}ms`)),
@@ -154,26 +148,15 @@ export class OdooClient implements OnModuleInit {
     return this.executeKw(model, 'search_count', [domain]);
   }
 
-  async create(
-    model: string,
-    values: Record<string, any>,
-  ): Promise<number> {
+  async create(model: string, values: Record<string, any>): Promise<number> {
     return this.executeKw(model, 'create', [values]);
   }
 
-  async write(
-    model: string,
-    ids: number[],
-    values: Record<string, any>,
-  ): Promise<boolean> {
+  async write(model: string, ids: number[], values: Record<string, any>): Promise<boolean> {
     return this.executeKw(model, 'write', [ids, values]);
   }
 
-  async read(
-    model: string,
-    ids: number[],
-    fields: string[] = [],
-  ): Promise<any[]> {
+  async read(model: string, ids: number[], fields: string[] = []): Promise<any[]> {
     return this.executeKw(model, 'read', [ids], { fields });
   }
 
@@ -182,21 +165,113 @@ export class OdooClient implements OnModuleInit {
     return this.callXmlRpc(this.commonClient, 'version', []);
   }
 
-  async renderReport(
-    reportName: string,
-    ids: number[],
-  ): Promise<{ base64: string; format: string }> {
+  private tryDecodePdf(result: any): Buffer | null {
+    if (Array.isArray(result) && result.length > 0) {
+      const first = result[0];
+      if (typeof first === 'string' && first.length > 0) return Buffer.from(first, 'base64');
+      if (first instanceof Buffer) return first;
+    }
+
+    if (typeof result === 'string' && result.length > 0) {
+      return Buffer.from(result, 'base64');
+    }
+
+    return null;
+  }
+
+  private getBaseUrl(): string {
+    const parsed = new URL(this.url);
+    return `${parsed.protocol}//${parsed.host}`;
+  }
+
+  private async authenticateWebSession(): Promise<string> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/web/session/authenticate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'call',
+          params: {
+            db: this.db,
+            login: this.username,
+            password: this.apiKey,
+          },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} autenticando sesión web Odoo`);
+      }
+
+      const data = await res.json();
+      if (data?.error) {
+        throw new Error(`Error autenticando sesión web: ${JSON.stringify(data.error)}`);
+      }
+
+      const rawSetCookie = res.headers.get('set-cookie') ?? '';
+      const match = rawSetCookie.match(/session_id=[^;]+/);
+      if (!match?.[0]) {
+        throw new Error('No se recibió cookie de sesión de Odoo');
+      }
+
+      return match[0];
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async downloadInvoicePdfByHttp(invoiceId: number): Promise<Buffer> {
+    const sessionCookie = await this.authenticateWebSession();
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const reportUrl = `${this.getBaseUrl()}/report/pdf/account.report_invoice/${invoiceId}?download=true`;
+      const res = await fetch(reportUrl, {
+        method: 'GET',
+        headers: { Cookie: sessionCookie },
+        signal: controller.signal,
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`No se pudo descargar PDF vía HTTP (${res.status}): ${txt.slice(0, 200)}`);
+      }
+
+      const arr = await res.arrayBuffer();
+      return Buffer.from(arr);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async renderInvoicePdf(invoiceId: number): Promise<Buffer> {
     if (!this.uid) await this.authenticate();
 
-    const result = await this.callXmlRpc(this.reportClient, 'render_report', [
-      this.db,
-      this.uid,
-      this.apiKey,
-      reportName,
-      ids,
-    ]);
+    try {
+      const reportResult = await this.callXmlRpc(this.reportClient, 'render_report', [
+        this.db,
+        this.uid,
+        this.apiKey,
+        'account.report_invoice',
+        [invoiceId],
+      ]);
 
-    return { base64: result[0], format: result[1] };
+      const parsed = this.tryDecodePdf(reportResult);
+      if (parsed) return parsed;
+    } catch (err) {
+      this.logger.warn(
+        `XML-RPC report service unavailable, falling back to HTTP report endpoint: ${err.message}`,
+      );
+    }
+
+    return this.downloadInvoicePdfByHttp(invoiceId);
   }
 
   isConnected(): boolean {
