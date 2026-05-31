@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -12,6 +13,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
+  private readonly logger = new Logger(UsersService.name);
+
   constructor(
     @InjectRepository(User) private usersRepo: Repository<User>,
   ) {}
@@ -22,10 +25,17 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto) {
+    this.logger.log(
+      `Create user requested: email=${dto.email}, role_id=${dto.role_id}`,
+    );
+
     const exists = await this.usersRepo.findOne({
       where: { email: dto.email },
     });
-    if (exists) throw new ConflictException('Email already registered');
+    if (exists) {
+      this.logger.warn(`Create user rejected: email already exists (${dto.email})`);
+      throw new ConflictException('Email already registered');
+    }
 
     const user = this.usersRepo.create({
       email: dto.email,
@@ -35,6 +45,10 @@ export class UsersService {
     });
 
     const saved = await this.usersRepo.save(user);
+    this.logger.log(
+      `User created successfully: id=${saved.id}, email=${saved.email}, role=${saved.role?.name ?? saved.role_id}`,
+    );
+
     return this.sanitize(saved);
   }
 

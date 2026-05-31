@@ -14,6 +14,7 @@ import { CrmModule } from './crm/crm.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EmployeesModule } from './employees/employees.module';
 import { SyncModule } from './sync/sync.module';
+import { PurchasesModule } from './purchases/purchases.module';
 import {
   appConfig,
   databaseConfig,
@@ -39,6 +40,7 @@ import {
     DashboardModule,
     EmployeesModule,
     SyncModule,
+    PurchasesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

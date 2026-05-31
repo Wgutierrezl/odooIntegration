@@ -20,6 +20,7 @@ export const odooConfig = registerAs('odoo', () => ({
   db: process.env.ODOO_DB,
   username: process.env.ODOO_USERNAME,
   apiKey: process.env.ODOO_API_KEY,
+  webPassword: process.env.ODOO_WEB_PASSWORD,
   timeoutMs: parseInt(process.env.ODOO_TIMEOUT_MS ?? '15000', 10),
   maxRetries: parseInt(process.env.ODOO_MAX_RETRIES ?? '3', 10),
   syncIntervalMinutes: parseInt(

@@ -14,14 +14,18 @@ export class OdooClient implements OnModuleInit {
   private db: string;
   private username: string;
   private apiKey: string;
+  private webPassword: string;
   private timeoutMs: number;
   private maxRetries: number;
+
+  private webSessionCookie: string | null = null;
 
   constructor(private config: ConfigService) {
     this.url = this.config.get<string>('odoo.url') ?? '';
     this.db = this.config.get<string>('odoo.db') ?? '';
     this.username = this.config.get<string>('odoo.username') ?? '';
     this.apiKey = this.config.get<string>('odoo.apiKey') ?? '';
+    this.webPassword = this.config.get<string>('odoo.webPassword') ?? '';
     this.timeoutMs = this.config.get<number>('odoo.timeoutMs') ?? 15000;
     this.maxRetries = this.config.get<number>('odoo.maxRetries') ?? 3;
   }
@@ -30,6 +34,10 @@ export class OdooClient implements OnModuleInit {
     if (!this.url) {
       this.logger.warn('ODOO_URL not set — Odoo integration disabled');
       return;
+    }
+
+    if (!this.webPassword) {
+      this.logger.warn('ODOO_WEB_PASSWORD not set — HTTP report fallback may fail');
     }
 
     const parsedUrl = new URL(this.url);
@@ -116,9 +124,20 @@ export class OdooClient implements OnModuleInit {
         ]);
       } catch (err) {
         lastError = err;
+        const message = String(err?.message ?? '');
         this.logger.warn(
-          `Odoo call failed (attempt ${attempt}/${this.maxRetries}): ${model}.${method} — ${err.message}`,
+          `Odoo call failed (attempt ${attempt}/${this.maxRetries}): ${model}.${method} — ${message}`,
         );
+
+        const isInvoiceBusinessRuleError =
+          model === 'sale.advance.payment.inv' &&
+          method === 'create_invoices' &&
+          message.includes('No se puede crear una factura pues no hay artículos disponibles para facturar');
+
+        if (isInvoiceBusinessRuleError) {
+          throw err;
+        }
+
         if (attempt < this.maxRetries) {
           await new Promise((r) => setTimeout(r, 1000 * attempt));
         }
@@ -184,12 +203,21 @@ export class OdooClient implements OnModuleInit {
     return `${parsed.protocol}//${parsed.host}`;
   }
 
-  private async authenticateWebSession(): Promise<string> {
+  private async authenticateWebSession(forceRefresh = false): Promise<string> {
+    if (this.webSessionCookie && !forceRefresh) {
+      return this.webSessionCookie;
+    }
+
+    if (!this.webPassword) {
+      throw new Error('ODOO_WEB_PASSWORD no configurado para autenticación web de reportes');
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const res = await fetch(`${this.getBaseUrl()}/web/session/authenticate`, {
+      const authUrl = `${this.getBaseUrl()}/web/session/authenticate`;
+      const res = await fetch(authUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -198,46 +226,63 @@ export class OdooClient implements OnModuleInit {
           params: {
             db: this.db,
             login: this.username,
-            password: this.apiKey,
+            password: this.webPassword,
           },
         }),
         signal: controller.signal,
       });
 
       if (!res.ok) {
+        this.logger.error(`Web login failed (HTTP ${res.status}) at ${authUrl}`);
         throw new Error(`HTTP ${res.status} autenticando sesión web Odoo`);
       }
 
       const data = await res.json();
       if (data?.error) {
+        this.logger.error(`Web login failed: ${JSON.stringify(data.error)}`);
         throw new Error(`Error autenticando sesión web: ${JSON.stringify(data.error)}`);
       }
 
       const rawSetCookie = res.headers.get('set-cookie') ?? '';
       const match = rawSetCookie.match(/session_id=[^;]+/);
       if (!match?.[0]) {
+        this.logger.error('Web login failed: no session_id cookie returned');
         throw new Error('No se recibió cookie de sesión de Odoo');
       }
 
-      return match[0];
+      this.webSessionCookie = match[0];
+      this.logger.log('Web login successful for report download');
+      return this.webSessionCookie;
     } finally {
       clearTimeout(timer);
     }
   }
 
-  private async downloadInvoicePdfByHttp(invoiceId: number): Promise<Buffer> {
-    const sessionCookie = await this.authenticateWebSession();
+  // Odoo docs: quotations and sales orders are sale.order reports, invoices are account.move reports.
+  // Report generation depends on product invoicing policy (ordered quantities vs delivered quantities).
+  private async downloadReportPdf(reportName: string, recordId: number): Promise<Buffer> {
+    const reportUrl = `${this.getBaseUrl()}/report/pdf/${reportName}/${recordId}?download=true`;
+    this.logger.log(`Trying HTTP report URL: ${reportUrl}`);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
     try {
-      const reportUrl = `${this.getBaseUrl()}/report/pdf/account.report_invoice/${invoiceId}?download=true`;
-      const res = await fetch(reportUrl, {
+      let sessionCookie = await this.authenticateWebSession();
+      let res = await fetch(reportUrl, {
         method: 'GET',
         headers: { Cookie: sessionCookie },
         signal: controller.signal,
       });
+
+      if (res.status === 401 || res.status === 403) {
+        sessionCookie = await this.authenticateWebSession(true);
+        res = await fetch(reportUrl, {
+          method: 'GET',
+          headers: { Cookie: sessionCookie },
+          signal: controller.signal,
+        });
+      }
 
       if (!res.ok) {
         const txt = await res.text();
@@ -251,8 +296,18 @@ export class OdooClient implements OnModuleInit {
     }
   }
 
-  async renderInvoicePdf(invoiceId: number): Promise<Buffer> {
-    if (!this.uid) await this.authenticate();
+  async downloadQuotationPdf(saleOrderId: number): Promise<Buffer> {
+    this.logger.log(`Downloading document type=quotation for saleOrderId=${saleOrderId}`);
+    return this.downloadReportPdf('sale.action_report_saleorder', saleOrderId);
+  }
+
+  async downloadSaleOrderPdf(saleOrderId: number): Promise<Buffer> {
+    this.logger.log(`Downloading document type=sale_order for saleOrderId=${saleOrderId}`);
+    return this.downloadReportPdf('sale.action_report_saleorder', saleOrderId);
+  }
+
+  async downloadInvoicePdf(invoiceId: number): Promise<Buffer> {
+    this.logger.log(`Downloading document type=invoice for invoiceId=${invoiceId}`);
 
     try {
       const reportResult = await this.callXmlRpc(this.reportClient, 'render_report', [
@@ -262,16 +317,21 @@ export class OdooClient implements OnModuleInit {
         'account.report_invoice',
         [invoiceId],
       ]);
-
       const parsed = this.tryDecodePdf(reportResult);
       if (parsed) return parsed;
     } catch (err) {
-      this.logger.warn(
-        `XML-RPC report service unavailable, falling back to HTTP report endpoint: ${err.message}`,
-      );
+      if (String(err?.message ?? '').includes("KeyError: 'report'")) {
+        this.logger.warn(
+          `XML-RPC report service not available in this Odoo instance. Using HTTP fallback. Details: ${err.message}`,
+        );
+      }
     }
 
-    return this.downloadInvoicePdfByHttp(invoiceId);
+    try {
+      return await this.downloadReportPdf('account.report_invoice', invoiceId);
+    } catch {
+      return this.downloadReportPdf('account.account_invoices', invoiceId);
+    }
   }
 
   isConnected(): boolean {

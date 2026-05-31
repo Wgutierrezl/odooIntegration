@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { salesApi } from '../../api/sales';
+import { salesApi, type SaleDocumentDiagnostics } from '../../api/sales';
 import { productsApi } from '../../api/products';
 import { contactsApi } from '../../api/contacts';
-import { ShoppingCart, X, FileText, Download, Check } from 'lucide-react';
+import { ShoppingCart, X, FileText, Check, FolderOpen, Download } from 'lucide-react';
 
 interface CartItem {
   product_id: number;
@@ -17,6 +17,7 @@ export default function SalesPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<number | null>(null);
   const [productSearch, setProductSearch] = useState('');
+  const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
   const queryClient = useQueryClient();
 
   const { data: salesData, isLoading } = useQuery({
@@ -36,6 +37,18 @@ export default function SalesPage() {
     enabled: showPOS,
   });
 
+  const {
+    data: documents,
+    isLoading: documentsLoading,
+    isError: documentsError,
+    error: documentsErrorData,
+    refetch: refetchDocuments,
+  } = useQuery<SaleDocumentDiagnostics>({
+    queryKey: ['sale-documents', selectedSaleId],
+    queryFn: () => salesApi.getSaleDocuments(selectedSaleId!),
+    enabled: selectedSaleId !== null,
+  });
+
   const createSale = useMutation({
     mutationFn: salesApi.create,
     onSuccess: () => {
@@ -53,7 +66,10 @@ export default function SalesPage() {
 
   const createInvoice = useMutation({
     mutationFn: salesApi.createInvoice,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sales'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      if (selectedSaleId) queryClient.invalidateQueries({ queryKey: ['sale-documents', selectedSaleId] });
+    },
   });
 
   const addToCart = (product: any) => {
@@ -207,11 +223,13 @@ export default function SalesPage() {
                         <FileText size={16} className="text-blue-600" />
                       </button>
                     )}
-                    {s.invoice_ids?.length > 0 && (
-                      <button onClick={() => salesApi.downloadInvoicePdf(s.id)} className="p-1 hover:bg-purple-50 rounded" title="Descargar PDF">
-                        <Download size={16} className="text-purple-600" />
-                      </button>
-                    )}
+                    <button
+                      onClick={() => setSelectedSaleId((prev) => (prev === s.id ? null : s.id))}
+                      className="p-1 hover:bg-indigo-50 rounded"
+                      title="Ver documentos disponibles"
+                    >
+                      <FolderOpen size={16} className="text-indigo-600" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -220,6 +238,105 @@ export default function SalesPage() {
               )}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {selectedSaleId && (
+        <div className="bg-white rounded-xl shadow-sm border mt-6 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Documentos disponibles</h2>
+            <button onClick={() => refetchDocuments()} className="text-sm text-blue-600 hover:underline">Actualizar</button>
+          </div>
+
+          {documentsLoading && <p className="text-gray-500 text-sm">Cargando documentos...</p>}
+          {documentsError && (
+            <p className="text-red-600 text-sm">
+              Error al cargar documentos: {(documentsErrorData as Error)?.message ?? 'Error desconocido'}
+            </p>
+          )}
+
+          {!documentsLoading && !documentsError && documents && (
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Tipo actual:</span>
+                <span className={`px-2 py-1 rounded text-xs ${documents.documentType === 'quotation' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                  {documents.documentType === 'quotation' ? 'Cotización' : 'Orden de venta'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {documents.availableDocuments.quotationPdf && (
+                  <button
+                    onClick={() => salesApi.downloadQuotationPdf(documents.saleOrderId)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
+                  >
+                    <Download size={14} /> Descargar cotización
+                  </button>
+                )}
+
+                {documents.availableDocuments.saleOrderPdf && (
+                  <button
+                    onClick={() => salesApi.downloadSaleOrderPdf(documents.saleOrderId)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
+                  >
+                    <Download size={14} /> Descargar orden de venta
+                  </button>
+                )}
+              </div>
+
+              {documents.invoices.length === 0 ? (
+                <p className="text-gray-500">No hay facturas generadas para esta venta.</p>
+              ) : (
+                <div className="space-y-2">
+                  {documents.invoices.map((inv) => (
+                    <div key={inv.id} className="flex items-center justify-between border rounded-lg px-3 py-2">
+                      <div>
+                        <p className="font-medium">{inv.name}</p>
+                        <span className={`inline-flex px-2 py-1 rounded text-xs ${inv.state === 'posted' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                          {inv.state === 'posted' ? 'Factura publicada' : 'Factura borrador'}
+                        </span>
+                      </div>
+
+                      {inv.state === 'posted' ? (
+                        <button
+                          onClick={() => salesApi.downloadInvoicePdf(inv.id, true)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
+                        >
+                          <Download size={14} /> Descargar factura final
+                        </button>
+                      ) : (
+                        <div className="text-right">
+                          <span className="inline-flex px-2 py-1 rounded text-xs bg-yellow-100 text-yellow-700 mb-1">Borrador</span>
+                          {inv.canDownload && (
+                            <div>
+                              <button
+                                onClick={() => salesApi.downloadInvoicePdf(inv.id, false)}
+                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border hover:bg-gray-50"
+                              >
+                                <Download size={14} /> Descargar factura borrador
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {documents.availableDocuments.draftInvoicePdf && !documents.availableDocuments.postedInvoicePdf && (
+                    <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                      La factura existe, pero todavía está en borrador. Publícala en Odoo para descargarla como factura final.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {!documents.availableDocuments.quotationPdf &&
+                !documents.availableDocuments.saleOrderPdf &&
+                documents.invoices.length === 0 && (
+                  <p className="text-gray-500">No hay documentos disponibles para descargar.</p>
+                )}
+            </div>
+          )}
         </div>
       )}
     </div>

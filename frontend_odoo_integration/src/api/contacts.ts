@@ -8,6 +8,9 @@ interface CreateContact {
 }
 
 export const contactsApi = {
+  listAll: (params?: { q?: string; limit?: number; offset?: number }) =>
+    api.get('/contacts', { params }).then((r) => r.data),
+
   listCustomers: (params?: { q?: string; limit?: number; offset?: number }) =>
     api.get('/contacts/customers', { params }).then((r) => r.data),
 

@@ -9,15 +9,22 @@ import {
   UserCog,
   Briefcase,
   LogOut,
+  FileText,
+  ClipboardList,
+  Truck,
 } from 'lucide-react';
 import { branding, t } from '../../config/branding';
 
 const navItems = [
   { to: '/', label: t.dashboard, icon: LayoutDashboard, roles: ['admin', 'manager'] },
   { to: '/products', label: t.products, icon: Package, roles: ['admin', 'manager', 'seller'] },
+  { to: '/contacts', label: t.contactsAll, icon: Users, roles: ['admin', 'manager', 'seller'] },
   { to: '/customers', label: t.customers, icon: Users, roles: ['admin', 'manager', 'seller'] },
   { to: '/suppliers', label: t.suppliers, icon: Users, roles: ['admin', 'manager'] },
   { to: '/sales', label: t.salesPos, icon: ShoppingCart, roles: ['admin', 'manager', 'seller'] },
+  { to: '/quotations', label: t.quotations, icon: FileText, roles: ['admin', 'manager', 'seller'] },
+  { to: '/orders', label: t.salesOrders, icon: ClipboardList, roles: ['admin', 'manager'] },
+  { to: '/purchases', label: t.purchases, icon: Truck, roles: ['admin'] },
   { to: '/crm', label: t.crmPipeline, icon: TrendingUp, roles: ['admin', 'manager'] },
   { to: '/employees', label: t.employees, icon: Briefcase, roles: ['admin', 'manager'] },
   { to: '/users', label: t.userManagement, icon: UserCog, roles: ['admin'] },

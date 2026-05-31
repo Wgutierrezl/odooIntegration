@@ -20,6 +20,11 @@ import { Roles } from '../common/decorators/roles.decorator';
 export class ContactsController {
   constructor(private contactsService: ContactsService) {}
 
+  @Get()
+  findAll(@Query() query: SearchContactDto) {
+    return this.contactsService.findAll(query);
+  }
+
   @Get('customers')
   findCustomers(@Query() query: SearchContactDto) {
     return this.contactsService.findCustomers(query);

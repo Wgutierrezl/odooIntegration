@@ -17,15 +17,36 @@ export async function runSeed(dataSource: DataSource) {
   ]);
 
   const adminRole = roles.find((r) => r.name === 'admin')!;
-  const passwordHash = await bcrypt.hash('Admin123!', 10);
+  const managerRole = roles.find((r) => r.name === 'manager')!;
+  const sellerRole = roles.find((r) => r.name === 'seller')!;
 
-  await userRepo.save({
-    email: 'admin@platform.local',
-    password_hash: passwordHash,
-    full_name: 'Administrator',
-    role_id: adminRole.id,
-    is_active: true,
-  });
+  const adminPasswordHash = await bcrypt.hash('Admin123!', 10);
+  const managerPasswordHash = await bcrypt.hash('Manager123!', 10);
+  const sellerPasswordHash = await bcrypt.hash('Seller123!', 10);
 
-  console.log('Seed completed: 3 roles + admin user created');
+  await userRepo.save([
+    {
+      email: 'admin@platform.local',
+      password_hash: adminPasswordHash,
+      full_name: 'Administrator',
+      role_id: adminRole.id,
+      is_active: true,
+    },
+    {
+      email: 'manager@platform.local',
+      password_hash: managerPasswordHash,
+      full_name: 'Operations Manager',
+      role_id: managerRole.id,
+      is_active: true,
+    },
+    {
+      email: 'seller@platform.local',
+      password_hash: sellerPasswordHash,
+      full_name: 'POS Seller',
+      role_id: sellerRole.id,
+      is_active: true,
+    },
+  ]);
+
+  console.log('Seed completed: 3 roles + 3 users (admin/manager/seller) created');
 }
