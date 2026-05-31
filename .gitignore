@@ -1,0 +1,52 @@
+# =========================
+# Root tooling (local only)
+# =========================
+.atl/
+.codex/
+.agents/
+
+# =========================
+# Environment files
+# =========================
+backend_odoo_integration/.env
+backend_odoo_integration/.env.*
+frontend_odoo_integration/.env
+frontend_odoo_integration/.env.*
+
+# =========================
+# Dependencies
+# =========================
+backend_odoo_integration/node_modules/
+frontend_odoo_integration/node_modules/
+
+# =========================
+# Build artifacts
+# =========================
+backend_odoo_integration/dist/
+backend_odoo_integration/build/
+frontend_odoo_integration/dist/
+frontend_odoo_integration/dist-ssr/
+
+# =========================
+# Runtime / data / temp
+# =========================
+backend_odoo_integration/data/*.db
+backend_odoo_integration/.temp/
+backend_odoo_integration/.tmp/
+
+# =========================
+# Logs / coverage / cache
+# =========================
+*.log
+backend_odoo_integration/coverage/
+frontend_odoo_integration/coverage/
+backend_odoo_integration/.nyc_output/
+frontend_odoo_integration/.nyc_output/
+*.tsbuildinfo
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+.vscode/
+.idea/
